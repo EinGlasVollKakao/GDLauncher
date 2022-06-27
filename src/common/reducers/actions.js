@@ -3109,18 +3109,53 @@ export function launchInstance(instanceName, forceQuit = false) {
 
     let closed = false;
 
+    let argFilePath;
+
+    // use argument files for versions greater than 1.19
+    if (gte(coerce(loader?.mcVersion), coerce('1.19'))) {
+      const filePath = path.join(instancePath, 'argFile');
+      const fileContent = jvmArguments
+        .map(v =>
+          v
+            .toString()
+            .replace(...replaceRegex)
+            .replace(
+              // eslint-disable-next-line no-template-curly-in-string
+              '-Dlog4j.configurationFile=${path}',
+              `-Dlog4j.configurationFile="${loggingPath}"`
+            )
+        )
+        .join(' ');
+
+      try {
+        fss.writeFileSync(filePath, fileContent);
+      } catch (err) {
+        dispatch(removeStartedInstance(instanceName));
+        if (
+          !closed &&
+          getState().modals.find(v => v.modalType === 'InstanceStartupAd')
+        ) {
+          closed = true;
+          dispatch(closeModal());
+        }
+        throw new Error(`Could not write argument file to disk (${filePath})`);
+      }
+      argFilePath = [`"@${filePath}"`];
+    }
+
     const ps = spawn(
       `"${javaPath}"`,
-      jvmArguments.map(v =>
-        v
-          .toString()
-          .replace(...replaceRegex)
-          .replace(
-            // eslint-disable-next-line no-template-curly-in-string
-            '-Dlog4j.configurationFile=${path}',
-            `-Dlog4j.configurationFile="${loggingPath}"`
-          )
-      ),
+      argFilePath ??
+        jvmArguments.map(v =>
+          v
+            .toString()
+            .replace(...replaceRegex)
+            .replace(
+              // eslint-disable-next-line no-template-curly-in-string
+              '-Dlog4j.configurationFile=${path}',
+              `-Dlog4j.configurationFile="${loggingPath}"`
+            )
+        ),
       {
         cwd: instancePath,
         shell: true
